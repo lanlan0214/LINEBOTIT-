@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LINE Bot IT 報修系統 — 技術架構簡報</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg-primary: #0a0e1a;
+    --bg-card: rgba(15, 23, 42, 0.85);
+    --bg-card-hover: rgba(30, 41, 59, 0.9);
+    --accent-cyan: #06d6a0;
+    --accent-blue: #3b82f6;
+    --accent-purple: #8b5cf6;
+    --accent-pink: #ec4899;
+    --accent-orange: #f59e0b;
+    --accent-red: #ef4444;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --border-glow: rgba(6, 214, 160, 0.3);
+    --glass: rgba(255,255,255,0.04);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; scroll-snap-type: y mandatory; overflow-y: scroll; }
+
+  body {
+    font-family: 'Inter', 'Noto Sans TC', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ====== Global Background Animation ====== */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background:
+      radial-gradient(ellipse 600px 400px at 20% 20%, rgba(59,130,246,0.08), transparent),
+      radial-gradient(ellipse 500px 500px at 80% 80%, rgba(139,92,246,0.06), transparent),
+      radial-gradient(ellipse 800px 300px at 50% 50%, rgba(6,214,160,0.04), transparent);
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* ====== Slide ====== */
+  .slide {
+    scroll-snap-align: start;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 40px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .slide-inner {
+    max-width: 1100px;
+    width: 100%;
+    animation: fadeSlideUp 0.8s ease-out both;
+  }
+
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(40px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ====== Phase Badge ====== */
+  .phase-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+    border: 1px solid;
+  }
+  .phase-badge .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 800;
+  }
+
+  .badge-cyan    { background: rgba(6,214,160,0.1);  border-color: rgba(6,214,160,0.3);  color: var(--accent-cyan); }
+  .badge-cyan .num    { background: var(--accent-cyan); color: var(--bg-primary); }
+  .badge-blue    { background: rgba(59,130,246,0.1);  border-color: rgba(59,130,246,0.3);  color: var(--accent-blue); }
+  .badge-blue .num    { background: var(--accent-blue); color: #fff; }
+  .badge-purple  { background: rgba(139,92,246,0.1);  border-color: rgba(139,92,246,0.3);  color: var(--accent-purple); }
+  .badge-purple .num  { background: var(--accent-purple); color: #fff; }
+  .badge-pink    { background: rgba(236,72,153,0.1);  border-color: rgba(236,72,153,0.3);  color: var(--accent-pink); }
+  .badge-pink .num    { background: var(--accent-pink); color: #fff; }
+  .badge-orange  { background: rgba(245,158,11,0.1);  border-color: rgba(245,158,11,0.3);  color: var(--accent-orange); }
+  .badge-orange .num  { background: var(--accent-orange); color: var(--bg-primary); }
+  .badge-red     { background: rgba(239,68,68,0.1);   border-color: rgba(239,68,68,0.3);   color: var(--accent-red); }
+  .badge-red .num     { background: var(--accent-red); color: #fff; }
+
+  /* ====== Title ====== */
+  .slide-title {
+    font-size: 2.6rem;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 10px;
+    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .slide-title .highlight {
+    -webkit-text-fill-color: initial;
+  }
+  .hl-cyan   { color: var(--accent-cyan); }
+  .hl-blue   { color: var(--accent-blue); }
+  .hl-purple { color: var(--accent-purple); }
+  .hl-pink   { color: var(--accent-pink); }
+  .hl-orange { color: var(--accent-orange); }
+  .hl-red    { color: var(--accent-red); }
+
+  .slide-subtitle {
+    font-size: 1.05rem;
+    color: var(--text-secondary);
+    margin-bottom: 36px;
+    max-width: 700px;
+  }
+
+  /* ====== Cards Grid ====== */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 28px;
+    backdrop-filter: blur(12px);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 16px 16px 0 0;
+  }
+  .card:hover {
+    background: var(--bg-card-hover);
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+  }
+
+  .card-cyan::before    { background: linear-gradient(90deg, var(--accent-cyan), transparent); }
+  .card-blue::before    { background: linear-gradient(90deg, var(--accent-blue), transparent); }
+  .card-purple::before  { background: linear-gradient(90deg, var(--accent-purple), transparent); }
+  .card-pink::before    { background: linear-gradient(90deg, var(--accent-pink), transparent); }
+  .card-orange::before  { background: linear-gradient(90deg, var(--accent-orange), transparent); }
+  .card-red::before     { background: linear-gradient(90deg, var(--accent-red), transparent); }
+
+  .card-icon {
+    font-size: 1.8rem;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .card h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+  }
+
+  .card p, .card li {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  .card ul {
+    list-style: none;
+    padding: 0;
+  }
+  .card ul li {
+    padding: 4px 0 4px 20px;
+    position: relative;
+  }
+  .card ul li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    font-weight: 700;
+  }
+  .card-cyan ul li::before   { color: var(--accent-cyan); }
+  .card-blue ul li::before   { color: var(--accent-blue); }
+  .card-purple ul li::before { color: var(--accent-purple); }
+  .card-pink ul li::before   { color: var(--accent-pink); }
+  .card-orange ul li::before { color: var(--accent-orange); }
+  .card-red ul li::before    { color: var(--accent-red); }
+
+  /* ====== Code Tag ====== */
+  code {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 0.82rem;
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    color: var(--accent-cyan);
+  }
+
+  /* ====== Cover Slide ====== */
+  .cover { text-align: center; }
+  .cover .slide-title { font-size: 3.4rem; margin-bottom: 20px; }
+  .cover .slide-title .highlight { display: block; font-size: 1.4rem; font-weight: 400; letter-spacing: 4px; margin-top: 8px; }
+  .cover .tagline {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+    letter-spacing: 0.5px;
+  }
+  .cover .tech-stack {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+  }
+  .cover .tech-stack span {
+    padding: 6px 18px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: var(--glass);
+    color: var(--text-secondary);
+  }
+
+  /* ====== Flow Diagram ====== */
+  .flow-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 36px;
+  }
+  .flow-step {
+    padding: 12px 22px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.08);
+    white-space: nowrap;
+  }
+  .flow-arrow {
+    font-size: 1.4rem;
+    color: var(--text-muted);
+    padding: 0 6px;
+  }
+
+  /* ====== Summary Slide ====== */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .metric {
+    text-align: center;
+    padding: 30px 20px;
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(16px);
+  }
+  .metric .value {
+    font-size: 2.6rem;
+    font-weight: 800;
+    display: block;
+    margin-bottom: 6px;
+  }
+  .metric .label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  /* ====== Nav Dots ====== */
+  .nav-dots {
+    position: fixed;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 100;
+  }
+  .nav-dots a {
+    display: block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    transition: all 0.3s;
+    border: none;
+  }
+  .nav-dots a:hover, .nav-dots a.active {
+    background: var(--accent-cyan);
+    box-shadow: 0 0 12px var(--accent-cyan);
+    transform: scale(1.3);
+  }
+
+  /* ====== Responsive ====== */
+  @media (max-width: 768px) {
+    .slide { padding: 40px 20px; }
+    .slide-title { font-size: 1.8rem; }
+    .cover .slide-title { font-size: 2.2rem; }
+    .cards { grid-template-columns: 1fr; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .nav-dots { display: none; }
+    .flow-row { gap: 4px; }
+    .flow-step { font-size: 0.7rem; padding: 8px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Navigation Dots -->
+<nav class="nav-dots" id="navDots">
+  <a href="#cover" title="封面"></a>
+  <a href="#overview" title="系統總覽"></a>
+  <a href="#phase1" title="驗證階段"></a>
+  <a href="#phase2" title="AI 意圖辨識"></a>
+  <a href="#phase3" title="AI 自助排障"></a>
+  <a href="#phase4" title="資訊收集"></a>
+  <a href="#phase5" title="確認與提交"></a>
+  <a href="#phase6" title="加密與儲存"></a>
+  <a href="#phase7" title="通知與 RAG"></a>
+  <a href="#summary" title="總結"></a>
+</nav>
+
+<!-- ==================== SLIDE: Cover ==================== -->
+<section class="slide" id="cover">
+  <div class="slide-inner cover">
+    <div class="phase-badge badge-cyan"><span class="num">⚡</span> TECHNICAL ARCHITECTURE</div>
+    <h1 class="slide-title">
+      LINE Bot IT 報修系統
+      <span class="highlight hl-cyan">INTELLIGENT REPAIR TICKET SYSTEM</span>
+    </h1>
+    <p class="tagline">基於 LINE Messaging API 與 OpenAI 的智慧報修工單平台<br>從掃碼驗證到 AI 分流、自助排障、工單建立全流程自動化</p>
+    <div class="tech-stack">
+      <span>Next.js 15</span>
+      <span>LINE LIFF SDK</span>
+      <span>OpenAI GPT</span>
+      <span>MSSQL</span>
+      <span>Milvus Vector DB</span>
+      <span>AES-256-GCM</span>
+      <span>Nodemailer</span>
+      <span>RAG Pipeline</span>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: System Overview ==================== -->
+<section class="slide" id="overview">
+  <div class="slide-inner">
+    <div class="phase-badge badge-blue"><span class="num">◎</span> SYSTEM OVERVIEW</div>
+    <h2 class="slide-title">系統流程<span class="highlight hl-blue">總覽</span></h2>
+    <p class="slide-subtitle">使用者從 LINE 掃碼進入，經歷 AI 多層處理，最終建立加密工單並通知工程師</p>
+
+    <div class="flow-row">
+      <div class="flow-step" style="border-color:var(--accent-cyan);">📱 QR 掃碼</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step" style="border-color:var(--accent-blue);">🤖 AI 意圖分類</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step" style="border-color:var(--accent-purple);">🔧 AI 自助排障</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step" style="border-color:var(--accent-pink);">📋 資料收集</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step" style="border-color:var(--accent-orange);">✅ 確認提交</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step" style="border-color:var(--accent-red);">🔒 加密儲存</div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step" style="border-color:var(--accent-cyan);">📧 通知派工</div>
+    </div>
+
+    <div class="cards">
+      <div class="card card-blue">
+        <span class="card-icon">🏗️</span>
+        <h3>前端架構</h3>
+        <ul>
+          <li>Next.js 15 App Router</li>
+          <li>LIFF SDK 掃碼頁面</li>
+          <li>Webhook API 接收事件</li>
+          <li>Rich Menu 互動選單</li>
+        </ul>
+      </div>
+      <div class="card card-purple">
+        <span class="card-icon">🧠</span>
+        <h3>AI 處理引擎</h3>
+        <ul>
+          <li>OpenAI GPT — 意圖分類</li>
+          <li>自助排障步驟生成</li>
+          <li>結構化欄位擷取</li>
+          <li>DB 管理 Prompt 版本</li>
+        </ul>
+      </div>
+      <div class="card card-cyan">
+        <span class="card-icon">💾</span>
+        <h3>資料層</h3>
+        <ul>
+          <li>MSSQL — 工單 / 日誌儲存</li>
+          <li>Milvus — RAG 向量檢索</li>
+          <li>AES-256-GCM 欄位加密</li>
+          <li>Knex.js Migration 管理</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: Phase 1 — QR Scan & Verification ==================== -->
+<section class="slide" id="phase1">
+  <div class="slide-inner">
+    <div class="phase-badge badge-cyan"><span class="num">1</span> VERIFICATION PHASE</div>
+    <h2 class="slide-title">QR 掃碼<span class="highlight hl-cyan">驗證階段</span></h2>
+    <p class="slide-subtitle">使用者透過 LIFF App 掃描設備 QR Code，系統解析序號並建立草稿工單，完成身分綁定</p>
+
+    <div class="cards">
+      <div class="card card-cyan">
+        <span class="card-icon">📷</span>
+        <h3>LIFF 掃碼啟動</h3>
+        <ul>
+          <li>初始化 <code>liff.init()</code> 取得 Access Token</li>
+          <li>調用相機 <code>QrScanner</code> 元件</li>
+          <li>支援 URL 參數 <code>?itemSerialNo=</code> 直接帶入</li>
+          <li>未登入自動跳轉 <code>liff.login()</code></li>
+        </ul>
+      </div>
+      <div class="card card-cyan">
+        <span class="card-icon">🔍</span>
+        <h3>QR 內容解析</h3>
+        <ul>
+          <li>白名單主機驗證 <code>ALLOWED_HOSTS</code></li>
+          <li>移除零寬字元、正規化 URL</li>
+          <li>大小寫不敏感參數擷取</li>
+          <li>URL 解析失敗時 Regex 後援</li>
+        </ul>
+      </div>
+      <div class="card card-cyan">
+        <span class="card-icon">📝</span>
+        <h3>草稿工單建立</h3>
+        <ul>
+          <li>呼叫 <code>/api/notify</code> 傳送序號</li>
+          <li><code>createTicketDraftOnScan()</code> 寫入 DB</li>
+          <li>狀態初始化 <code>status=draft, phase=draft</code></li>
+          <li>自動產生 ticketNo 並綁定 userId</li>
+        </ul>
+      </div>
+      <div class="card card-cyan">
+        <span class="card-icon">👤</span>
+        <h3>使用者 Upsert</h3>
+        <ul>
+          <li><code>fetchUserProfileByUserId()</code> 取檔案</li>
+          <li>儲存 displayName / pictureUrl / language</li>
+          <li>follow / unfollow 事件自動處理</li>
+          <li>防連點鎖定 <code>acquireRestartLock()</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: Phase 2 — AI Intent Classification ==================== -->
+<section class="slide" id="phase2">
+  <div class="slide-inner">
+    <div class="phase-badge badge-blue"><span class="num">2</span> AI CLASSIFICATION</div>
+    <h2 class="slide-title">AI 意圖<span class="highlight hl-blue">辨識階段</span></h2>
+    <p class="slide-subtitle">使用者輸入訊息後，系統透過多層判斷機制辨識是否為報修需求，並分類問題類型</p>
+
+    <div class="cards">
+      <div class="card card-blue">
+        <span class="card-icon">🔤</span>
+        <h3>規則層快篩</h3>
+        <ul>
+          <li>Regex 關鍵字比對：黑畫面、無法開機、斷線...</li>
+          <li><code>selectRepairPhrases()</code> 預篩報修語句</li>
+          <li>支援近 50 種常見報修關鍵詞</li>
+          <li>通過快篩可跳過 AI 呼叫，降低延遲</li>
+        </ul>
+      </div>
+      <div class="card card-blue">
+        <span class="card-icon">🤖</span>
+        <h3>OpenAI GPT 分類</h3>
+        <ul>
+          <li><code>aiClassifyRepairIntent()</code> JSON 回傳</li>
+          <li>輸出 is_repair / confidence / category</li>
+          <li>Prompt 版本由 DB <code>prompts</code> 表管理</li>
+          <li>Temperature 0.1，確保穩定輸出</li>
+        </ul>
+      </div>
+      <div class="card card-blue">
+        <span class="card-icon">⚡</span>
+        <h3>快取與效能</h3>
+        <ul>
+          <li>Cache Key 綁定 prompt hash + model</li>
+          <li><code>withTTL()</code> TTL 快取機制</li>
+          <li>相同訊息不重複呼叫 API</li>
+          <li>回傳 quick_replies 供使用者快速選擇</li>
+        </ul>
+      </div>
+      <div class="card card-blue">
+        <span class="card-icon">📊</span>
+        <h3>分類結果處理</h3>
+        <ul>
+          <li>is_repair = true → 進入排障 / 收集流程</li>
+          <li>is_repair = false → 轉 RAG 知識庫回覆</li>
+          <li>模糊症狀 → 釐清提問 <code>promptClarifySymptom()</code></li>
+          <li>完整日誌寫入 <code>ticket_logs</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: Phase 3 — AI Triage ==================== -->
+<section class="slide" id="phase3">
+  <div class="slide-inner">
+    <div class="phase-badge badge-purple"><span class="num">3</span> AI TRIAGE & TROUBLESHOOTING</div>
+    <h2 class="slide-title">AI 自助<span class="highlight hl-purple">排障階段</span></h2>
+    <p class="slide-subtitle">針對常見 IT 問題，AI 自動生成最多 6 步排障指引，嘗試在建單前協助使用者自行解決</p>
+
+    <div class="cards">
+      <div class="card card-purple">
+        <span class="card-icon">🔧</span>
+        <h3>通用排障引擎</h3>
+        <ul>
+          <li><code>aiTroubleshootGeneric()</code> 通用問題</li>
+          <li>GPT 生成結構化 steps 陣列（≤ 6 步）</li>
+          <li>自動編號輸出，控制在 800 字以內</li>
+          <li>附帶追問：「請問問題是否已解決？」</li>
+        </ul>
+      </div>
+      <div class="card card-purple">
+        <span class="card-icon">💻</span>
+        <h3>應用程式專用排障</h3>
+        <ul>
+          <li><code>looksLikeAppLaunchIssue()</code> 偵測啟動類問題</li>
+          <li><code>aiTroubleshootApp()</code> 專屬 Prompt</li>
+          <li>情境預設：Windows / Office / 瀏覽器環境</li>
+          <li>Outlook、Teams、VPN、ERP 等常見應用</li>
+        </ul>
+      </div>
+      <div class="card card-purple">
+        <span class="card-icon">✅</span>
+        <h3>解決狀態追蹤</h3>
+        <ul>
+          <li>Quick Reply：「已解決 / 未解決」</li>
+          <li><code>isYesReply()</code> / <code>isNoReply()</code> 語意判斷</li>
+          <li>已解決 → 結案 <code>resetCase()</code></li>
+          <li>未解決 → 進入資料收集階段</li>
+        </ul>
+      </div>
+      <div class="card card-purple">
+        <span class="card-icon">📚</span>
+        <h3>RAG 知識庫輔助</h3>
+        <ul>
+          <li>Milvus 向量資料庫儲存歷史案例</li>
+          <li><code>answerByCompanyRag()</code> 相似度檢索</li>
+          <li>COSINE 相似度 + HNSW 索引</li>
+          <li>低於 <code>RAG_MIN_SCORE</code> 門檻不回覆</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: Phase 4 — Information Collection ==================== -->
+<section class="slide" id="phase4">
+  <div class="slide-inner">
+    <div class="phase-badge badge-pink"><span class="num">4</span> DATA COLLECTION</div>
+    <h2 class="slide-title">報修資訊<span class="highlight hl-pink">收集階段</span></h2>
+    <p class="slide-subtitle">系統透過對話式 UX 逐步收集五大必填欄位，搭配 AI 欄位擷取實現一次輸入多欄位解析</p>
+
+    <div class="cards">
+      <div class="card card-pink">
+        <span class="card-icon">📋</span>
+        <h3>五大必填欄位</h3>
+        <ul>
+          <li><strong>客戶名稱</strong> — 公司 / 機構名稱</li>
+          <li><strong>客戶單位</strong> — 分行 / 部門</li>
+          <li><strong>聯絡人</strong> — 姓名（≥ 2 字，無數字）</li>
+          <li><strong>連絡方式</strong> — 電話 / LINE ID</li>
+          <li><strong>服務地址</strong> — 完整地址（≥ 5 字）</li>
+        </ul>
+      </div>
+      <div class="card card-pink">
+        <span class="card-icon">🤖</span>
+        <h3>AI 欄位擷取</h3>
+        <ul>
+          <li><code>aiExtractRepairInfo()</code> 一次解析多欄位</li>
+          <li>從自然語言中萃取結構化 JSON</li>
+          <li>支援 call_reason / note / type 分類</li>
+          <li>Temperature 0.1，最大 1500 tokens</li>
+        </ul>
+      </div>
+      <div class="card card-pink">
+        <span class="card-icon">✏️</span>
+        <h3>驗證規則</h3>
+        <ul>
+          <li><code>isPhone()</code> — 台灣手機/市話/國際格式/分機</li>
+          <li><code>isPhoneOrLine()</code> — 支援 LINE ID <code>@xxx</code></li>
+          <li><code>isName()</code> — 至少 2 字、不含數字</li>
+          <li><code>isAddress()</code> — 至少 5 字</li>
+        </ul>
+      </div>
+      <div class="card card-pink">
+        <span class="card-icon">🔄</span>
+        <h3>對話狀態機</h3>
+        <ul>
+          <li><code>SupportState</code> 追蹤 phase / expect</li>
+          <li><code>hasAllRequiredV2()</code> 檢查完整性</li>
+          <li>歷史聯絡人自動帶入 <code>getLastContactForUser()</code></li>
+          <li>逾時自動清除驗證，要求重新掃碼</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: Phase 5 — Confirmation & Submission ==================== -->
+<section class="slide" id="phase5">
+  <div class="slide-inner">
+    <div class="phase-badge badge-orange"><span class="num">5</span> CONFIRMATION & SUBMISSION</div>
+    <h2 class="slide-title">確認與<span class="highlight hl-orange">提交階段</span></h2>
+    <p class="slide-subtitle">顯示完整報修摘要供使用者確認，支援逐欄修改 / 全部修改 / 補充內容，確認後正式建立工單</p>
+
+    <div class="cards">
+      <div class="card card-orange">
+        <span class="card-icon">📄</span>
+        <h3>確認卡片生成</h3>
+        <ul>
+          <li><code>promptConfirmInfo()</code> 產出摘要文字</li>
+          <li>顯示：單號 / 症狀 / 客戶 / 聯絡人 / 地址</li>
+          <li>包含隱私權聲明告知</li>
+          <li>Quick Reply 按鈕提供修改選項</li>
+        </ul>
+      </div>
+      <div class="card card-orange">
+        <span class="card-icon">✏️</span>
+        <h3>互動修改選項</h3>
+        <ul>
+          <li><code>buildConfirmQuickReply()</code> 動態生成按鈕</li>
+          <li>支援修改 / 新增個別欄位</li>
+          <li>「補充內容」欄位追加資訊</li>
+          <li>「全部修改」重新收集所有欄位</li>
+        </ul>
+      </div>
+      <div class="card card-orange">
+        <span class="card-icon">🚀</span>
+        <h3>工單正式建立</h3>
+        <ul>
+          <li>Postback <code>action: 'submit'</code> 觸發</li>
+          <li><code>createTicketCore()</code> 寫入或更新 DB</li>
+          <li>ticketNo 格式：<code>LR-YYYYMMDD-HHmmss-xxx</code></li>
+          <li>狀態更新 <code>draft → open</code></li>
+        </ul>
+      </div>
+      <div class="card card-orange">
+        <span class="card-icon">🔚</span>
+        <h3>流程結束</h3>
+        <ul>
+          <li>回覆確認訊息：案件已收到，轉交客服</li>
+          <li><code>resetCase()</code> 清除所有暫存狀態</li>
+          <li>設 <code>mustRescan = true</code> 下次需重新掃碼</li>
+          <li>Flex Carousel 卡片收尾 <code>getRenderedPayload()</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: Phase 6 — Encryption & Storage ==================== -->
+<section class="slide" id="phase6">
+  <div class="slide-inner">
+    <div class="phase-badge badge-red"><span class="num">6</span> ENCRYPTION & STORAGE</div>
+    <h2 class="slide-title">資料加密與<span class="highlight hl-red">安全儲存</span></h2>
+    <p class="slide-subtitle">所有個人識別資訊 (PII) 採用 AES-256-GCM 欄位層級加密，確保靜態資料安全</p>
+
+    <div class="cards">
+      <div class="card card-red">
+        <span class="card-icon">🔐</span>
+        <h3>AES-256-GCM 加密</h3>
+        <ul>
+          <li>金鑰來源 <code>APP_ENC_KEY_B64</code> (Base64 32 bytes)</li>
+          <li>隨機 IV 12 bytes + Auth Tag 16 bytes</li>
+          <li>版本前綴 <code>ENC.v1.</code> 支援金鑰輪替</li>
+          <li><code>seal()</code> 加密 / <code>open()</code> 解密</li>
+        </ul>
+      </div>
+      <div class="card card-red">
+        <span class="card-icon">🛡️</span>
+        <h3>PII 欄位保護</h3>
+        <ul>
+          <li>custName / custBranch → 加密儲存</li>
+          <li>contactName / contactPhone → 加密儲存</li>
+          <li>contactAddress → 加密儲存</li>
+          <li>防止重複加密 <code>isEncrypted()</code> 檢查</li>
+        </ul>
+      </div>
+      <div class="card card-red">
+        <span class="card-icon">🗄️</span>
+        <h3>MSSQL 資料庫</h3>
+        <ul>
+          <li><code>repair_tickets</code> — 主工單表</li>
+          <li><code>ticket_logs</code> — 完整對話日誌</li>
+          <li><code>flex_carousels</code> — Flex Message 模板</li>
+          <li>Knex.js 管理 20+ 筆 Migration</li>
+        </ul>
+      </div>
+      <div class="card card-red">
+        <span class="card-icon">⚙️</span>
+        <h3>工單狀態管理</h3>
+        <ul>
+          <li>Status: draft → open → in_progress → closed</li>
+          <li>Phase: 10 種對話階段精準追蹤</li>
+          <li><code>goPhase()</code> 同步寫入 phase + log</li>
+          <li>支援 voided / voided_for_restart 作廢流程</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: Phase 7 — Notification & RAG ==================== -->
+<section class="slide" id="phase7">
+  <div class="slide-inner">
+    <div class="phase-badge badge-cyan"><span class="num">7</span> NOTIFICATION & INTELLIGENCE</div>
+    <h2 class="slide-title">通知派工與<span class="highlight hl-cyan">智慧回覆</span></h2>
+    <p class="slide-subtitle">工單建立後自動發送 Email 通知客服人員，RAG 引擎持續提供歷史案例輔助回覆</p>
+
+    <div class="cards">
+      <div class="card card-cyan">
+        <span class="card-icon">📧</span>
+        <h3>Email 通知系統</h3>
+        <ul>
+          <li>Nodemailer SMTP 郵件發送</li>
+          <li>SMTP 設定由 DB SystemParameter 動態取得</li>
+          <li>通知內容：單號、客戶、聯絡人、症狀描述</li>
+          <li>寄送成功/失敗完整 Log 記錄</li>
+        </ul>
+      </div>
+      <div class="card card-cyan">
+        <span class="card-icon">🧬</span>
+        <h3>RAG 向量檢索</h3>
+        <ul>
+          <li>Milvus 向量資料庫 + HNSW 索引</li>
+          <li>OpenAI Embeddings 語意向量化</li>
+          <li>COSINE 相似度匹配歷史案例</li>
+          <li>公司層級隔離 <code>company_key</code></li>
+        </ul>
+      </div>
+      <div class="card card-cyan">
+        <span class="card-icon">📖</span>
+        <h3>RAG 回覆生成</h3>
+        <ul>
+          <li>檢索 Top-K 相似案例作為 Context</li>
+          <li>GPT 根據案例生成專業回覆</li>
+          <li>不足以判斷時提出追問 + 通用排查</li>
+          <li>回覆限制 8 行以內，繁體中文輸出</li>
+        </ul>
+      </div>
+      <div class="card card-cyan">
+        <span class="card-icon">🔄</span>
+        <h3>資料同步管線</h3>
+        <ul>
+          <li><code>rag-sync-hsis.ts</code> 同步 HSIS 案例</li>
+          <li>SHA-1 穩定 ID 避免重複寫入</li>
+          <li>Collection 自動建立 + 欄位定義</li>
+          <li>支援增量同步、批次匯入</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SLIDE: Summary ==================== -->
+<section class="slide" id="summary">
+  <div class="slide-inner" style="text-align:center;">
+    <div class="phase-badge badge-purple"><span class="num">∞</span> SUMMARY</div>
+    <h2 class="slide-title">系統<span class="highlight hl-purple">關鍵指標</span></h2>
+    <p class="slide-subtitle" style="margin:0 auto 40px;">端到端自動化報修流程，從掃碼到派工全程 AI 輔助</p>
+
+    <div class="summary-grid">
+      <div class="metric">
+        <span class="value hl-cyan">7</span>
+        <span class="label">核心處理階段</span>
+      </div>
+      <div class="metric">
+        <span class="value hl-blue">3</span>
+        <span class="label">AI 模型呼叫點<br><small style="color:var(--text-muted)">分類 / 排障 / 擷取</small></span>
+      </div>
+      <div class="metric">
+        <span class="value hl-purple">5</span>
+        <span class="label">PII 加密欄位<br><small style="color:var(--text-muted)">AES-256-GCM</small></span>
+      </div>
+      <div class="metric">
+        <span class="value hl-pink">10</span>
+        <span class="label">對話階段追蹤<br><small style="color:var(--text-muted)">TicketPhase</small></span>
+      </div>
+      <div class="metric">
+        <span class="value hl-orange">20+</span>
+        <span class="label">DB Migration 版本<br><small style="color:var(--text-muted)">Knex.js</small></span>
+      </div>
+      <div class="metric">
+        <span class="value hl-red">50+</span>
+        <span class="label">報修關鍵詞規則<br><small style="color:var(--text-muted)">Regex + AI</small></span>
+      </div>
+    </div>
+
+    <div style="margin-top:50px;">
+      <div class="tech-stack" style="justify-content:center;">
+        <span style="border-color:var(--accent-cyan);color:var(--accent-cyan);">✦ 全對話式 UX</span>
+        <span style="border-color:var(--accent-blue);color:var(--accent-blue);">✦ AI 多層分流</span>
+        <span style="border-color:var(--accent-purple);color:var(--accent-purple);">✦ 欄位級加密</span>
+        <span style="border-color:var(--accent-pink);color:var(--accent-pink);">✦ RAG 知識庫</span>
+        <span style="border-color:var(--accent-orange);color:var(--accent-orange);">✦ 自動通知派工</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Active dot tracking
+  const dots = document.querySelectorAll('.nav-dots a');
+  const slides = document.querySelectorAll('.slide');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        dots.forEach(d => d.classList.remove('active'));
+        const active = document.querySelector(`.nav-dots a[href="#${id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { threshold: 0.5 });
+
+  slides.forEach(s => observer.observe(s));
+
+  // Keyboard navigation
+  let currentSlide = 0;
+  const slideIds = Array.from(slides).map(s => s.id);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ') {
+      e.preventDefault();
+      currentSlide = Math.min(currentSlide + 1, slideIds.length - 1);
+      document.getElementById(slideIds[currentSlide])?.scrollIntoView({ behavior: 'smooth' });
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      currentSlide = Math.max(currentSlide - 1, 0);
+      document.getElementById(slideIds[currentSlide])?.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+</script>
+</body>
+</html>
